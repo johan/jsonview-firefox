@@ -31,97 +31,108 @@ function JSONFormatter() {
 }
 JSONFormatter.prototype = {
   htmlEncode: function (t) {
-    return t != null ? t.toString().replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;") : '';
+    if (t == null) return '';
+    return t.toString().replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+                       .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  },
+
+  jsString: function(s, noQuotes) {
+    var has = { '\b': 'b' // return
+              , '\f': 'f' // these
+              , '\r': 'r' // to the
+              , '\n': 'n' // short
+              , '\t': 't' // form
+              }, ws; // afterwards!
+    for (ws in has)
+      if (-1 === s.indexOf(ws))
+        delete has[ws];
+
+    s = JSON.stringify(s).slice(1, -1);
+
+    for (ws in has) // undo damage of the over-\uXXXX-tastic JSON serializer
+      s = s.replace(new RegExp('\\\\u000'+(ws.charCodeAt().toString(16)), 'ig'),
+                    '\\' + has[ws]);
+
+    s = this.htmlEncode(s);
+    return noQuotes ? s : '"'+ s +'"';
   },
   
   decorateWithSpan: function (value, className) {
     return '<span class="' + className + '">' + this.htmlEncode(value) + '</span>';
   },
   
-  // Convert a basic JSON datatype (number, string, boolean, null, object, array) into an HTML fragment.
-  valueToHTML: function(value) {
-    var valueType = typeof value;
-    
-    var output = "";
-    if (value == null) {
-      output += this.decorateWithSpan('null', 'null');
-    }
-    else if (value && value.constructor == Array) {
-      output += this.arrayToHTML(value);
-    }
-    else if (valueType == 'object') {
-      output += this.objectToHTML(value);
-    } 
-    else if (valueType == 'number') {
-      output += this.decorateWithSpan(value, 'num');
-    }
-    else if (valueType == 'string') {
-      if (/^(http|https):\/\/[^\s]+$/i.test(value)) {
-        output += '<a href="' + value + '">' + this.htmlEncode(value) + '</a>';
+  // Convert JSON value (number, string, boolean, null, object, array)
+  // into an HTML fragment
+  valueToHTML: function(value, indent, nl) {
+    var output;
+    switch (typeof value) {
+      case 'object':
+        if (value === null) {
+          output = this.decorateWithSpan('null', 'null');
       } else {
-        output += this.decorateWithSpan('"' + value + '"', 'string');
-      }
+          indent = indent == null ? '' : indent + '&nbsp; ';
+          if (value.constructor === Array) {
+            output = this.arrayToHTML(value, indent, nl);
+          } else {
+            output = this.objectToHTML(value, indent, nl);
     }
-    else if (valueType == 'boolean') {
-      output += this.decorateWithSpan(value, 'bool');
     }
+      break;
     
+      case 'number':
+        output = this.decorateWithSpan(value, 'num');
+      break;
+  
+      case 'string':
+        if (/^(\w+):\/\/[^\s]+$/i.test(value)) {
+          output = '"<a href="'+ this.htmlEncode(value) +'">' +
+                     this.jsString(value, 'noQuotes') + '</a>"';
+        } else {
+          output = '<span class="string">'+ this.jsString(value) + '</span>';
+    }
+      break;
+    
+      case 'boolean':
+        output = this.decorateWithSpan(value, 'bool');
+      break;
+    }
     return output;
   },
   
   // Convert an array into an HTML fragment
-  arrayToHTML: function(json) {
-    var output = '[<ul class="array collapsible">';
-    var hasContents = false;
-    for ( var prop in json ) {
-      hasContents = true;
-      output += '<li>';
-      output += this.valueToHTML(json[prop]);
-      output += '</li>';
+  arrayToHTML: function(array, indent, nl) {
+    for (var i = 0, output = ''; i < array.length; i++) {
+      if (output) output += '<br\n/>' + indent +', ';
+      output += this.valueToHTML(array[i], indent, '');
     }
-    output += '</ul>]';
-    
-    if ( ! hasContents ) {
-      output = "[ ]";
-    }
-    
-    return output;
+    if (!output) return '[]';
+    return '<span class="unfolded array"><span class="content">' +
+             (nl ? nl + indent : '') + '[ ' + output + '<br\n/>' +
+                              indent + ']</span></span>';
   },
-  
-  // Convert a JSON object to an HTML fragment
-  objectToHTML: function(json) {
-    var output = '{<ul class="obj collapsible">';
-    var hasContents = false;
-    for ( var prop in json ) {
-      hasContents = true;
-      output += '<li>';
-      output += '<span class="prop">' + this.htmlEncode(prop) + '</span>: '
-      output += this.valueToHTML(json[prop]);
-      output += '</li>';
-    }
-    output += '</ul>}';
     
-    if ( ! hasContents ) {
-      output = "{ }";
-    }
-    
-    return output;
-  },
-  
-  // Convert a whole JSON object into a formatted HTML document.
-  jsonToHTML: function(json, callback, uri) {
+  // Convert an object to an HTML fragment
+  objectToHTML: function(obj, indent, nl) {
     var output = '';
-    if( callback ){
-      output += '<div class="callback">' + callback + ' (</div>';
-      output += '<div id="json">';
-    }else{
-      output += '<div id="json">';
+    for (var key in obj) {
+      if (output) output += '<br\n/>' + indent +', ';
+      output += '<span class="prop">' + this.jsString(key) + '</span>: ' +
+        this.valueToHTML(obj[key], indent, '<br\n/>');
     }
-    output += this.valueToHTML(json);
-    output += '</div>';
-    if( callback ){
-      output += '<div class="callback">)</div>';
-    }
+    if (!output) return '{}';
+    return '<span class="unfolded obj"><span class="content">' +
+             (nl ? nl + indent : '') + '{ ' + output + '<br\n/>' +
+                              indent + '}</span></span>';
+  },
+  
+  // Convert a whole JSON value / JSONP response into a formatted HTML document
+  jsonToHTML: function(json, callback, uri) {
+    var output = '<span id="json">' +
+        this.valueToHTML(json, callback ? '' : null, callback && '<br\n/>') +
+      '</span>';
+    if (callback)
+      output = '<span class="callback">' + callback + '(</span>' + output +
+               '<span class="callback">)</span>';
     return this.toHTML(output, uri);
   },
   
@@ -129,19 +140,17 @@ JSONFormatter.prototype = {
   errorPage: function(error, data, uri) {
     var output = '<div id="error">' + this.stringbundle.GetStringFromName('errorParsing') + '</div>';
     output += '<h1>' + this.stringbundle.GetStringFromName('docContents') + ':</h1>';
-    output += '<div id="json">' + this.htmlEncode(data) + '</div>';
+    output += '<span id="json">' + this.htmlEncode(data) + '</span>';
     return this.toHTML(output, uri + ' - Error');
   },
   
   // Wrap the HTML fragment in a full document. Used by jsonToHTML and errorPage.
   toHTML: function(content, title) {
-    return '<doctype html>' + 
-      '<html><head><title>' + title + '</title>' +
-      '<link rel="stylesheet" type="text/css" href="chrome://jsonview/content/default.css">' + 
-      '<script type="text/javascript" src="chrome://jsonview/content/default.js"></script>' + 
-      '</head><body>' +
-      content + 
-      '</body></html>';
+    return '<!DOCTYPE html>\n' +
+      '<html><head><title>' + this.htmlEncode(title) + '</title>\n' +
+      '<link rel="stylesheet" type="text/css" href="chrome://jsonview/content/default.css">\n' +
+      '<script type="text/javascript" src="chrome://jsonview/content/default.js"></script>\n' +
+      '</head><body>\n' + content + '<br\n/></body></html>';
   }
 };
 
@@ -338,5 +347,5 @@ if (XPCOMUtils.generateNSGetFactory) {
     }
     
     return XPCOMUtils.generateModule(components, postRegister, preUnregister);
-  }
+  };
 }
