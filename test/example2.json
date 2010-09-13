@@ -1,0 +1,27 @@
+jsonp(
+{ "hey": "guy"
+, "anumber": 243
+, "anobject":
+  { "whoa": "nuts"
+  , "anarray":
+    [ 1
+    , 2
+    , [ 1
+      , 2
+      , { "click anywhere": "to fold!"
+        }
+      ]
+    , "thr<h1>ee"
+    ]
+  , "more\u0000challenging": "stuff \t with \b misc \f control \u2620 codes\r\n"
+  }
+, "awesome": true
+, "bogus": false
+, "meaning": null
+, "japanese": "明日がある。"
+, "link": "http://jsonview.com"
+, "notLink": "http://jsonview.com is great"
+, "aZero": 0
+, "aFloat": 47.11
+, "emptyString":""
+})
